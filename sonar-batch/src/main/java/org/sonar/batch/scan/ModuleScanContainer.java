@@ -35,7 +35,6 @@ import org.sonar.batch.bootstrap.ExtensionMatcher;
 import org.sonar.batch.bootstrap.ExtensionUtils;
 import org.sonar.batch.deprecated.DeprecatedSensorContext;
 import org.sonar.batch.deprecated.ResourceFilters;
-import org.sonar.batch.deprecated.components.DefaultProjectClasspath;
 import org.sonar.batch.deprecated.components.DefaultTimeMachine;
 import org.sonar.batch.deprecated.perspectives.BatchPerspectives;
 import org.sonar.batch.index.DefaultIndex;
@@ -137,7 +136,6 @@ public class ModuleScanContainer extends ComponentContainer {
       ComponentIndexer.class,
       LanguageVerifier.class,
       FileSystemLogger.class,
-      DefaultProjectClasspath.class,
       DefaultModuleFileSystem.class,
       ModuleFileSystemInitializer.class,
       ProjectFileSystemAdapter.class,
@@ -191,13 +189,7 @@ public class ModuleScanContainer extends ComponentContainer {
     installer.install(this, new ExtensionMatcher() {
       @Override
       public boolean accept(Object extension) {
-        if (ExtensionUtils.isBatchSide(extension) && ExtensionUtils.isInstantiationStrategy(extension, InstantiationStrategy.PER_PROJECT)) {
-          // Special use-case: the extension point ProjectBuilder is used in a Maven environment to define some
-          // new sub-projects without pom.
-          // Example : C# plugin adds sub-projects at runtime, even if they are not defined in root pom.
-          return !ExtensionUtils.isMavenExtensionOnly(extension) || module.getPom() != null;
-        }
-        return false;
+        return ExtensionUtils.isBatchSide(extension) && ExtensionUtils.isInstantiationStrategy(extension, InstantiationStrategy.PER_PROJECT);
       }
     });
   }

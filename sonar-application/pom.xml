@@ -55,7 +55,7 @@
     </dependency>
     <dependency>
       <groupId>org.codehaus.sonar</groupId>
-      <artifactId>sonar-batch-maven-compat</artifactId>
+      <artifactId>sonar-batch-shaded</artifactId>
       <version>${project.version}</version>
       <scope>provided</scope>
     </dependency>
@@ -92,6 +92,13 @@
     <dependency>
       <groupId>org.codehaus.sonar.plugins</groupId>
       <artifactId>sonar-core-plugin</artifactId>
+      <version>${project.version}</version>
+      <type>sonar-plugin</type>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.codehaus.sonar.plugins</groupId>
+      <artifactId>sonar-batch-maven-plugin</artifactId>
       <version>${project.version}</version>
       <type>sonar-plugin</type>
       <scope>provided</scope>
