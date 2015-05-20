@@ -37,6 +37,7 @@ import org.sonar.core.persistence.MyBatis;
 import org.sonar.core.source.db.FileSourceDto;
 import org.sonar.core.source.db.FileSourceDto.Type;
 import org.sonar.server.computation.ComputationContext;
+import org.sonar.server.computation.component.PersistedComponentsRefCache;
 import org.sonar.server.computation.source.ComputeFileSourceData;
 import org.sonar.server.computation.source.CoverageLineReader;
 import org.sonar.server.computation.source.DuplicationLineReader;
@@ -60,10 +61,12 @@ public class PersistFileSourcesStep implements ComputationStep {
 
   private final DbClient dbClient;
   private final System2 system2;
+  private final PersistedComponentsRefCache persistedComponentsRefCache;
 
-  public PersistFileSourcesStep(DbClient dbClient, System2 system2) {
+  public PersistFileSourcesStep(DbClient dbClient, System2 system2, PersistedComponentsRefCache persistedComponentsRefCache) {
     this.dbClient = dbClient;
     this.system2 = system2;
+    this.persistedComponentsRefCache = persistedComponentsRefCache;
   }
 
   @Override
@@ -131,12 +134,13 @@ public class PersistFileSourcesStep implements ComputationStep {
     String dataHash = DigestUtils.md5Hex(data);
     String srcHash = fileSourceData.getSrcHash();
     String lineHashes = fileSourceData.getLineHashes();
-    FileSourceDto previousDto = fileSourcesContext.previousFileSourcesByUuid.get(component.getUuid());
+    String componentUuid = persistedComponentsRefCache.getByRef(component.getRef()).getUuid();
+    FileSourceDto previousDto = fileSourcesContext.previousFileSourcesByUuid.get(componentUuid);
 
     if (previousDto == null) {
       FileSourceDto dto = new FileSourceDto()
         .setProjectUuid(fileSourcesContext.context.getProject().uuid())
-        .setFileUuid(component.getUuid())
+        .setFileUuid(componentUuid)
         .setDataType(Type.SOURCE)
         .setBinaryData(data)
         .setSrcHash(srcHash)

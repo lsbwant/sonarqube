@@ -32,6 +32,7 @@ import org.sonar.core.component.ComponentLinkDto;
 import org.sonar.core.persistence.DbSession;
 import org.sonar.core.persistence.MyBatis;
 import org.sonar.server.computation.ComputationContext;
+import org.sonar.server.computation.component.PersistedComponentsRefCache;
 import org.sonar.server.db.DbClient;
 
 import javax.annotation.Nullable;
@@ -50,6 +51,7 @@ public class PersistProjectLinksStep implements ComputationStep {
 
   private final DbClient dbClient;
   private final I18n i18n;
+  private final PersistedComponentsRefCache persistedComponentsRefCache;
 
   private static final Map<Constants.ComponentLinkType, String> typesConverter = ImmutableMap.of(
     Constants.ComponentLinkType.HOME, ComponentLinkDto.TYPE_HOME_PAGE,
@@ -59,9 +61,10 @@ public class PersistProjectLinksStep implements ComputationStep {
     Constants.ComponentLinkType.ISSUE, ComponentLinkDto.TYPE_ISSUE_TRACKER
     );
 
-  public PersistProjectLinksStep(DbClient dbClient, I18n i18n) {
+  public PersistProjectLinksStep(DbClient dbClient, I18n i18n, PersistedComponentsRefCache persistedComponentsRefCache) {
     this.dbClient = dbClient;
     this.i18n = i18n;
+    this.persistedComponentsRefCache = persistedComponentsRefCache;
   }
 
   @Override
@@ -94,8 +97,9 @@ public class PersistProjectLinksStep implements ComputationStep {
   private void processLinks(DbSession session, BatchReport.Component component) {
     if (component.getType().equals(Constants.ComponentType.PROJECT) || component.getType().equals(Constants.ComponentType.MODULE)) {
       List<BatchReport.ComponentLink> links = component.getLinkList();
-      List<ComponentLinkDto> previousLinks = dbClient.componentLinkDao().selectByComponentUuid(session, component.getUuid());
-      mergeLinks(session, component.getUuid(), links, previousLinks);
+      String componentUuid = persistedComponentsRefCache.getByRef(component.getRef()).getUuid();
+      List<ComponentLinkDto> previousLinks = dbClient.componentLinkDao().selectByComponentUuid(session, componentUuid);
+      mergeLinks(session, componentUuid, links, previousLinks);
     }
   }
 

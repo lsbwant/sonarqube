@@ -23,16 +23,15 @@ package org.sonar.server.computation.step;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.sonar.api.measures.CoreMetrics;
 import org.sonar.api.resources.Qualifiers;
-import org.sonar.batch.protocol.Constants;
 import org.sonar.batch.protocol.output.BatchReport;
 import org.sonar.batch.protocol.output.BatchReport.Range;
 import org.sonar.batch.protocol.output.BatchReportReader;
-import org.sonar.core.component.ComponentKeys;
 import org.sonar.core.measure.db.MeasureDto;
 import org.sonar.core.measure.db.MetricDto;
 import org.sonar.core.persistence.DbSession;
 import org.sonar.core.persistence.MyBatis;
 import org.sonar.server.computation.ComputationContext;
+import org.sonar.server.computation.component.PersistedComponentsRefCache;
 import org.sonar.server.db.DbClient;
 
 import java.util.List;
@@ -43,9 +42,11 @@ import java.util.List;
 public class PersistDuplicationsStep implements ComputationStep {
 
   private final DbClient dbClient;
+  private final PersistedComponentsRefCache persistedComponentsRefCache;
 
-  public PersistDuplicationsStep(DbClient dbClient) {
+  public PersistDuplicationsStep(DbClient dbClient, PersistedComponentsRefCache persistedComponentsRefCache) {
     this.dbClient = dbClient;
+    this.persistedComponentsRefCache = persistedComponentsRefCache;
   }
 
   @Override
@@ -60,52 +61,47 @@ public class PersistDuplicationsStep implements ComputationStep {
       MetricDto duplicationMetric = dbClient.metricDao().selectByKey(session, CoreMetrics.DUPLICATIONS_DATA_KEY);
       DuplicationContext duplicationContext = new DuplicationContext(context, duplicationMetric, session);
       int rootComponentRef = context.getReportMetadata().getRootComponentRef();
-      recursivelyProcessComponent(duplicationContext, rootComponentRef, rootComponentRef);
+      recursivelyProcessComponent(duplicationContext, rootComponentRef);
       session.commit();
     } finally {
       MyBatis.closeQuietly(session);
     }
   }
 
-  private void recursivelyProcessComponent(DuplicationContext duplicationContext, int parentModuleRef, int componentRef) {
+  private void recursivelyProcessComponent(DuplicationContext duplicationContext, int componentRef) {
     BatchReportReader reportReader = duplicationContext.context().getReportReader();
     BatchReport.Component component = reportReader.readComponent(componentRef);
     List<BatchReport.Duplication> duplications = reportReader.readComponentDuplications(componentRef);
     if (!duplications.isEmpty()) {
-      saveDuplications(duplicationContext, reportReader.readComponent(parentModuleRef), component, duplications);
+      saveDuplications(duplicationContext, component, duplications);
     }
 
     for (Integer childRef : component.getChildRefList()) {
-      // If current component is a folder, we need to keep the parent reference to module parent
-      int nextParent = !component.getType().equals(Constants.ComponentType.PROJECT) && !component.getType().equals(Constants.ComponentType.MODULE) ?
-        parentModuleRef : componentRef;
-      recursivelyProcessComponent(duplicationContext, nextParent, childRef);
+      recursivelyProcessComponent(duplicationContext, childRef);
     }
   }
 
-  private void saveDuplications(DuplicationContext duplicationContext, BatchReport.Component parentComponent, BatchReport.Component component,
-    List<BatchReport.Duplication> duplications) {
+  private void saveDuplications(DuplicationContext duplicationContext, BatchReport.Component component, List<BatchReport.Duplication> duplications) {
 
-    String duplicationXml = createXmlDuplications(duplicationContext, parentComponent, component.getPath(), duplications);
+    PersistedComponentsRefCache.PersistedComponent persistedComponent = persistedComponentsRefCache.getByRef(component.getRef());
+    String duplicationXml = createXmlDuplications(duplicationContext, persistedComponent.getKey(), duplications);
     MeasureDto measureDto = new MeasureDto()
       .setMetricId(duplicationContext.metric().getId())
       .setData(duplicationXml)
-      .setComponentId(component.getId())
+      .setComponentId(persistedComponent.getId())
       .setSnapshotId(component.getSnapshotId());
     dbClient.measureDao().insert(duplicationContext.session(), measureDto);
   }
 
-  private String createXmlDuplications(DuplicationContext duplicationContext, BatchReport.Component parentComponent, String componentPath,
-    Iterable<BatchReport.Duplication> duplications) {
+  private String createXmlDuplications(DuplicationContext duplicationContext, String componentKey, Iterable<BatchReport.Duplication> duplications) {
 
     StringBuilder xml = new StringBuilder();
     xml.append("<duplications>");
     for (BatchReport.Duplication duplication : duplications) {
       xml.append("<g>");
-      appendDuplication(xml, ComponentKeys.createKey(parentComponent.getKey(), componentPath, duplicationContext.context().getReportMetadata().getBranch()),
-        duplication.getOriginPosition());
+      appendDuplication(xml, componentKey, duplication.getOriginPosition());
       for (BatchReport.Duplicate duplicationBlock : duplication.getDuplicateList()) {
-        processDuplicationBlock(duplicationContext, xml, duplicationBlock, parentComponent.getKey(), componentPath);
+        processDuplicationBlock(duplicationContext, xml, duplicationBlock, componentKey);
       }
       xml.append("</g>");
     }
@@ -113,22 +109,21 @@ public class PersistDuplicationsStep implements ComputationStep {
     return xml.toString();
   }
 
-  private void processDuplicationBlock(DuplicationContext duplicationContext, StringBuilder xml, BatchReport.Duplicate duplicate, String parentComponentKey,
-    String componentPath) {
+  private void processDuplicationBlock(DuplicationContext duplicationContext, StringBuilder xml, BatchReport.Duplicate duplicate, String componentKey) {
 
     if (duplicate.hasOtherFileKey()) {
       // componentKey is only set for cross project duplications
       String crossProjectComponentKey = duplicate.getOtherFileKey();
       appendDuplication(xml, crossProjectComponentKey, duplicate);
     } else {
-      String branch = duplicationContext.context().getReportMetadata().getBranch();
       if (duplicate.hasOtherFileRef()) {
         // Duplication is on a different file
         BatchReport.Component duplicationComponent = duplicationContext.context().getReportReader().readComponent(duplicate.getOtherFileRef());
-        appendDuplication(xml, ComponentKeys.createKey(parentComponentKey, duplicationComponent.getPath(), branch), duplicate);
+        PersistedComponentsRefCache.PersistedComponent persistedComponent = persistedComponentsRefCache.getByRef(duplicationComponent.getRef());
+        appendDuplication(xml, persistedComponent.getKey(), duplicate);
       } else {
         // Duplication is on a the same file
-        appendDuplication(xml, ComponentKeys.createKey(parentComponentKey, componentPath, branch), duplicate);
+        appendDuplication(xml, componentKey, duplicate);
       }
     }
   }

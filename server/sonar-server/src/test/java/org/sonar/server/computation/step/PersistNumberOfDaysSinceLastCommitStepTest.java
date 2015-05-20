@@ -131,7 +131,6 @@ public class PersistNumberOfDaysSinceLastCommitStepTest extends BaseStepTest {
       .setRef(1)
       .setType(Constants.ComponentType.PROJECT)
       .setKey("project-key")
-      .setUuid("project-uuid")
       .setSnapshotId(10L)
       .addChildRef(2)
       .build());

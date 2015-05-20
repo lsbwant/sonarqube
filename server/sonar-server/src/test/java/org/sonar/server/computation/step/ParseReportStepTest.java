@@ -30,6 +30,7 @@ import org.sonar.batch.protocol.output.BatchReportWriter;
 import org.sonar.core.component.ComponentDto;
 import org.sonar.core.persistence.DbTester;
 import org.sonar.server.computation.ComputationContext;
+import org.sonar.server.computation.component.ComputeComponentsRefCache;
 import org.sonar.server.computation.issue.IssueComputation;
 
 import java.io.File;
@@ -55,10 +56,16 @@ public class ParseReportStepTest extends BaseStepTest {
   public static DbTester dbTester = new DbTester();
 
   IssueComputation issueComputation = mock(IssueComputation.class);
-  ParseReportStep sut = new ParseReportStep(issueComputation);
+  ComputeComponentsRefCache computeComponentsRefCache = new ComputeComponentsRefCache();
+
+  ParseReportStep sut = new ParseReportStep(issueComputation, computeComponentsRefCache);
 
   @Test
   public void extract_report_from_db_and_browse_components() throws Exception {
+    computeComponentsRefCache.addComponent(1, new ComputeComponentsRefCache.ComputeComponent("PROJECT_KEY", "PROJECT_UUID"));
+    computeComponentsRefCache.addComponent(2, new ComputeComponentsRefCache.ComputeComponent("PROJECT_KEY:file1", "FILE1_UUID"));
+    computeComponentsRefCache.addComponent(3, new ComputeComponentsRefCache.ComputeComponent("PROJECT_KEY:file2", "FILE2_UUID"));
+
     File reportDir = generateReport();
 
     ComputationContext context = new ComputationContext(new BatchReportReader(reportDir), mock(ComponentDto.class));
@@ -89,19 +96,16 @@ public class ParseReportStepTest extends BaseStepTest {
     writer.writeComponent(BatchReport.Component.newBuilder()
       .setRef(1)
       .setType(Constants.ComponentType.PROJECT)
-      .setUuid("PROJECT_UUID")
       .addChildRef(2)
       .addChildRef(3)
       .build());
     writer.writeComponent(BatchReport.Component.newBuilder()
       .setRef(2)
       .setType(Constants.ComponentType.FILE)
-      .setUuid("FILE1_UUID")
       .build());
     writer.writeComponent(BatchReport.Component.newBuilder()
       .setRef(3)
       .setType(Constants.ComponentType.FILE)
-      .setUuid("FILE2_UUID")
       .build());
 
     // deleted components

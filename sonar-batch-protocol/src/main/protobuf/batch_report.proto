@@ -83,9 +83,7 @@ message Component {
   optional string description = 16;
 
   // temporary fields during development of computation stack
-  optional int64 id = 13;
   optional int64 snapshot_id = 8;
-  optional string uuid = 9;
   repeated Event event = 11;
 }
 

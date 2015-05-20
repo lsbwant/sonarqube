@@ -26,15 +26,15 @@ import org.apache.commons.lang.ObjectUtils;
 import org.apache.commons.lang.StringUtils;
 import org.sonar.api.resources.Qualifiers;
 import org.sonar.api.resources.Scopes;
-import org.sonar.api.utils.internal.Uuids;
 import org.sonar.batch.protocol.Constants;
 import org.sonar.batch.protocol.output.BatchReport;
 import org.sonar.batch.protocol.output.BatchReportReader;
 import org.sonar.core.component.ComponentDto;
-import org.sonar.core.component.ComponentKeys;
 import org.sonar.core.persistence.DbSession;
 import org.sonar.core.util.NonNullInputFunction;
 import org.sonar.server.computation.ComputationContext;
+import org.sonar.server.computation.component.ComputeComponentsRefCache;
+import org.sonar.server.computation.component.PersistedComponentsRefCache;
 import org.sonar.server.db.DbClient;
 
 import javax.annotation.Nullable;
@@ -45,9 +45,13 @@ import java.util.Map;
 public class PersistComponentsStep implements ComputationStep {
 
   private final DbClient dbClient;
+  private final ComputeComponentsRefCache computeComponentsRefCache;
+  private final PersistedComponentsRefCache persistedComponentsRefCache;
 
-  public PersistComponentsStep(DbClient dbClient) {
+  public PersistComponentsStep(DbClient dbClient, ComputeComponentsRefCache computeComponentsRefCache, PersistedComponentsRefCache persistedComponentsRefCache) {
     this.dbClient = dbClient;
+    this.computeComponentsRefCache = computeComponentsRefCache;
+    this.persistedComponentsRefCache = persistedComponentsRefCache;
   }
 
   @Override
@@ -74,6 +78,8 @@ public class PersistComponentsStep implements ComputationStep {
     BatchReportReader reportReader = componentContext.context.getReportReader();
     BatchReport.Component reportComponent = reportReader.readComponent(componentRef);
     ComponentDto componentDto = processComponent(componentContext, reportComponent, moduleParent);
+    // TODO add some test on this
+    persistedComponentsRefCache.addComponent(componentRef, new PersistedComponentsRefCache.PersistedComponent(componentDto.getId(), componentDto.getKey(), componentDto.uuid()));
 
     for (Integer childRef : reportComponent.getChildRefList()) {
       // If current component is not a module or a project, we need to keep the parent reference to the nearest module
@@ -84,14 +90,12 @@ public class PersistComponentsStep implements ComputationStep {
   }
 
   private ComponentDto processComponent(ComponentContext componentContext, BatchReport.Component reportComponent, @Nullable ComponentDto moduleParent) {
-    String path = reportComponent.hasPath() ? reportComponent.getPath() : null;
-    String branch = componentContext.context.getReportMetadata().hasBranch() ? componentContext.context.getReportMetadata().getBranch() : null;
-    String componentKey = reportComponent.hasKey() || moduleParent == null ?
-      ComponentKeys.createKey(reportComponent.getKey(), branch) :
-      ComponentKeys.createEffectiveKey(moduleParent.getKey(), path);
+    ComputeComponentsRefCache.ComputeComponent cacheComputeComponent = computeComponentsRefCache.getByRef(reportComponent.getRef());
+    String componentKey = cacheComputeComponent.getKey();
+    String componentUuid = cacheComputeComponent.getUuid();
     ComponentDto existingComponent = componentContext.componentDtosByKey.get(componentKey);
     if (existingComponent == null) {
-      ComponentDto component = createComponent(reportComponent, componentKey, Uuids.create(), moduleParent);
+      ComponentDto component = createComponent(reportComponent, componentKey, componentUuid, moduleParent);
       dbClient.componentDao().insert(componentContext.dbSession, component);
       return component;
     } else {

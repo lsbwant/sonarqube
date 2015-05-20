@@ -29,6 +29,7 @@ import org.sonar.batch.protocol.output.BatchReportReader;
 import org.sonar.core.measure.db.MeasureDto;
 import org.sonar.core.persistence.DbSession;
 import org.sonar.server.computation.ComputationContext;
+import org.sonar.server.computation.component.PersistedComponentsRefCache;
 import org.sonar.server.computation.issue.RuleCache;
 import org.sonar.server.computation.measure.MetricCache;
 import org.sonar.server.db.DbClient;
@@ -49,11 +50,13 @@ public class PersistMeasuresStep implements ComputationStep {
   private final DbClient dbClient;
   private final RuleCache ruleCache;
   private final MetricCache metricCache;
+  private final PersistedComponentsRefCache persistedComponentsRefCache;
 
-  public PersistMeasuresStep(DbClient dbClient, RuleCache ruleCache, MetricCache metricCache) {
+  public PersistMeasuresStep(DbClient dbClient, RuleCache ruleCache, MetricCache metricCache, PersistedComponentsRefCache persistedComponentsRefCache) {
     this.dbClient = dbClient;
     this.ruleCache = ruleCache;
     this.metricCache = metricCache;
+    this.persistedComponentsRefCache = persistedComponentsRefCache;
   }
 
   @Override
@@ -113,7 +116,7 @@ public class PersistMeasuresStep implements ComputationStep {
     out.setAlertText(in.hasAlertText() ? in.getAlertText() : null);
     out.setDescription(in.hasDescription() ? in.getDescription() : null);
     out.setSeverity(in.hasSeverity() ? in.getSeverity().name() : null);
-    out.setComponentId(component.getId());
+    out.setComponentId(persistedComponentsRefCache.getByRef(component.getRef()).getId());
     out.setSnapshotId(component.getSnapshotId());
     out.setMetricId(metricCache.get(in.getMetricKey()).getId());
     out.setRuleId(in.hasRuleKey() ? ruleCache.get(RuleKey.parse(in.getRuleKey())).getId() : null);
